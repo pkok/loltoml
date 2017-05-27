@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -49,6 +50,17 @@ inline std::string escape_char(char ch) {
 
 inline bool iscontrol(char ch) {
     return static_cast<unsigned char>(ch) < 32;
+}
+
+
+inline bool is_word_character(char ch) {
+    return (ch >= 'a' && ch <= 'z') ||
+           (ch >= 'A' && ch <= 'Z') ||
+           (ch >= '0' && ch <= '9') ||
+           ch == '+' ||
+           ch == '-' ||
+           ch == '_' ||
+           ch == '.';
 }
 
 
@@ -96,7 +108,8 @@ private:
         boolean,
         datetime,
         array,
-        table
+        table,
+        symbol,
     };
 
     std::size_t last_char_offset() const {
@@ -285,16 +298,8 @@ private:
                 parse_literal_string();
                 return toml_type_t::string;
             } break;
-            case 't': {
-                parse_true();
-                return toml_type_t::boolean;
-            } break;
-            case 'f': {
-                parse_false();
-                return toml_type_t::boolean;
-            } break;
             default: {
-                return parse_date_or_number();
+                return parse_bool_or_number_or_symbol();
             }
         }
     }
@@ -374,25 +379,6 @@ private:
                 throw parser_error_t("Expected ',' or '}' after an inline table element", last_char_offset());
             }
         }
-    }
-
-    void parse_true() {
-        parse_chars("t");
-        parse_chars("r");
-        parse_chars("u");
-        parse_chars("e");
-
-        handler.boolean(true);
-    }
-
-    void parse_false() {
-        parse_chars("f");
-        parse_chars("a");
-        parse_chars("l");
-        parse_chars("s");
-        parse_chars("e");
-
-        handler.boolean(false);
     }
 
     unsigned int parse_hex_digit() {
@@ -646,229 +632,41 @@ private:
         }
     }
 
-    char parse_datetime_digit() {
+    toml_type_t parse_bool_or_number_or_symbol() {
+        std::string result;
         char ch = input.get();
-        if (std::isdigit(ch)) {
-            return ch;
-        } else {
-            throw parser_error_t("Bad datetime. Expected digit.", last_char_offset());
-        }
-    }
-
-    toml_type_t parse_date_or_number() {
-        const std::size_t max_int64_digits = 19;
-        const char *max_int64_string = "9223372036854775807";
-        const char *min_int64_string = "9223372036854775808";
-
-        const std::size_t max_double_length = 800;
-
-        std::size_t value_offset = input.processed();
-
-        char buffer[max_double_length + 1];
-        buffer[0] = '+';
-        char *digits = buffer + 1;
-
-        std::size_t next_index = 0;
-
-        if (std::isdigit(input.peek())) {
-            digits[next_index++] = input.get();
-            if (std::isdigit(input.peek())) {
-                digits[next_index++] = input.get();
-                if (std::isdigit(input.peek())) {
-                    digits[next_index++] = input.get();
-                    if (std::isdigit(input.peek())) {
-                        digits[next_index++] = input.get();
-
-                        if (input.peek() == '-') {
-                            digits[next_index++] = input.get();
-
-                            digits[next_index++] = parse_datetime_digit();
-                            digits[next_index++] = parse_datetime_digit();
-                            digits[next_index++] = parse_chars("-");
-                            digits[next_index++] = parse_datetime_digit();
-                            digits[next_index++] = parse_datetime_digit();
-                            digits[next_index++] = parse_chars("tT");
-                            digits[next_index++] = parse_datetime_digit();
-                            digits[next_index++] = parse_datetime_digit();
-                            digits[next_index++] = parse_chars(":");
-                            digits[next_index++] = parse_datetime_digit();
-                            digits[next_index++] = parse_datetime_digit();
-                            digits[next_index++] = parse_chars(":");
-                            digits[next_index++] = parse_datetime_digit();
-                            digits[next_index++] = parse_datetime_digit();
-
-                            if (input.peek() == '.') {
-                                digits[next_index++] = input.get();
-                                digits[next_index++] = parse_datetime_digit();
-
-                                while (std::isdigit(input.peek())) {
-                                    digits[next_index++] = input.get();
-                                }
-                            }
-
-                            if (input.peek() == 'z' || input.peek() == 'Z') {
-                                digits[next_index++] = input.get();
-                            } else {
-                                digits[next_index++] = parse_chars("+-");
-                                digits[next_index++] = parse_datetime_digit();
-                                digits[next_index++] = parse_datetime_digit();
-                                digits[next_index++] = parse_chars(":");
-                                digits[next_index++] = parse_datetime_digit();
-                                digits[next_index++] = parse_datetime_digit();
-                            }
-
-                            handler.datetime(std::string(digits, digits + next_index));
-                            return toml_type_t::datetime;
-                        }
-                    }
-                }
-            }
-        } else if (input.peek() == '-') {
-            input.get();
-            buffer[0] = '-';
-        } else if (input.peek() == '+') {
-            input.get();
-        } else {
-            input.get();
-            throw parser_error_t("Unexpected character", last_char_offset());
+        if (!is_word_character(ch)) {
+            throw parser_error_t("Expected a non-empty symbol", last_char_offset());
         }
 
-        bool last_digit = next_index > 0;
-        while (true) {
-            if (next_index == max_double_length) {
-                throw parser_error_t("Number is too long", last_char_offset());
-            }
+        result.push_back(ch);
 
-            if (std::isdigit(input.peek())) {
-                digits[next_index++] = input.get();
-                last_digit = true;
-            } else if (last_digit && input.peek() == '_') {
-                input.get();
-                last_digit = false;
-            } else {
-                break;
-            }
+        while (is_word_character(input.peek())) {
+            result.push_back(input.get());
         }
 
-        if (!last_digit) {
-            throw parser_error_t("Unexpected number end", last_char_offset());
+        if (result == "true") {
+            handler.boolean(true);
+            return toml_type_t::boolean;
         }
-
-        if (digits[0] == '0' && next_index > 1) {
-            throw parser_error_t("Leading zeros are not allowed", input.processed() - next_index);
+        else if (result == "false") {
+            handler.boolean(false);
+            return toml_type_t::boolean;
         }
-
-        if (input.peek() != '.' && input.peek() != 'e' && input.peek() != 'E') {
-            if (next_index == max_int64_digits)
-            {
-                if (buffer[0] == '-' && strncmp(digits, min_int64_string, max_int64_digits) > 0) {
-                    throw parser_error_t("The number cannot be represented as 64-bit signed integer",
-                                         value_offset);
-                }
-
-                if (buffer[0] != '-' && strncmp(digits, max_int64_string, max_int64_digits) > 0) {
-                    throw parser_error_t("The number cannot be represented as 64-bit signed integer",
-                                         value_offset);
-                }
-            } else if (next_index > max_int64_digits) {
-                throw parser_error_t("The number cannot be represented as 64-bit signed integer",
-                                     value_offset);
-            }
-
-            std::int64_t result = 0;
-
-            if (buffer[0] == '-') {
-                for (auto it = digits; it < digits + next_index; ++it) {
-                    result = 10 * result - (*it - '0');
-                }
-            } else {
-                for (auto it = digits; it < digits + next_index; ++it) {
-                    result = 10 * result + (*it - '0');
-                }
-            }
-
-            handler.integer(result);
+        else if (std::regex_match(result, std::regex("^\\d+$"))) {
+            handler.integer(std::stoll(result));
             return toml_type_t::integer;
         }
-
-        if (input.peek() == '.') {
-            digits[next_index++] = '.';
-            input.get();
-
-            last_digit = false;
-            while (true) {
-                if (next_index == max_double_length) {
-                    throw parser_error_t("Number is too long", last_char_offset());
-                }
-
-                if (std::isdigit(input.peek())) {
-                    digits[next_index++] = input.get();
-                    last_digit = true;
-                } else if (last_digit && input.peek() == '_') {
-                    input.get();
-                    last_digit = false;
-                } else {
-                    break;
-                }
-            }
-
-            if (!last_digit) {
-                throw parser_error_t("Unexpected number end", last_char_offset());
-            }
+        //else if (std::regex_match(result, std::regex("^[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$"))) {
+        else if (std::regex_match(result, std::regex("^[-+]?((\\d*.\\d+)|(\\d+.\\d*)|\\d+)([eE][-+]?\\d+)?$"))) {
+            handler.floating_point(std::stod(result));
+            return toml_type_t::floating_point;
         }
-
-        if (input.peek() == 'e' || input.peek() == 'E') {
-            digits[next_index++] = input.get();
-
-            if (input.peek() == '+' || input.peek() == '-') {
-                digits[next_index++] = input.get();
-            }
-
-            char first_digit = input.peek();
-            std::size_t exponent_start = input.processed();
-            std::size_t exponent_size = 0;
-            last_digit = false;
-            while (true) {
-                if (next_index == max_double_length) {
-                    throw parser_error_t("Number is too long", last_char_offset());
-                }
-
-                if (std::isdigit(input.peek())) {
-                    digits[next_index++] = input.get();
-                    last_digit = true;
-                    ++exponent_size;
-                } else if (last_digit && input.peek() == '_') {
-                    input.get();
-                    last_digit = false;
-                } else {
-                    break;
-                }
-            }
-
-            if (!last_digit) {
-                throw parser_error_t("Unexpected number end", last_char_offset());
-            }
-
-            if (exponent_size > 1 && first_digit == '0') {
-                throw parser_error_t("Leading zeros are not allowed in exponent", exponent_start);
-            }
+        else if (std::regex_match(result, std::regex("^[a-zA-Z_][a-zA-Z0-9_]*$"))) {
+            handler.symbol(result);
+            return toml_type_t::symbol;
         }
-
-        digits[next_index] = '\0';
-        char *end = nullptr;
-        double result = std::strtod(buffer, &end);
-
-        if (end != digits + next_index) {
-            throw parser_error_t("Bad number", value_offset);
-        }
-
-        if (std::isnan(result) || std::isinf(result)) {
-            throw parser_error_t("The number can not be represented as 64-bit floating point number",
-                                 value_offset);
-        }
-
-        handler.floating_point(result);
-        return toml_type_t::floating_point;
+        throw parser_error_t("Invalid value", 0);
     }
 };
 

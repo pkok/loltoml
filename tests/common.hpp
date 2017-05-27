@@ -28,7 +28,8 @@ struct sax_event_t {
         string,
         datetime,
         integer,
-        floating_point
+        floating_point,
+        symbol
     };
 
     type_t type;
@@ -285,6 +286,10 @@ struct events_aggregator_t {
 
     void floating_point(double value) {
         events.emplace_back(sax_event_t::floating_point, value);
+    }
+
+    void symbol(const std::string &value) {
+        events.emplace_back(sax_event_t::symbol, value);
     }
 };
 

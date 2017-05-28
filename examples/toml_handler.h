@@ -1,3 +1,5 @@
+#pragma once
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wc++98-compat-pedantic"
 #pragma clang diagnostic ignored "-Wconditional-uninitialized"
@@ -11,7 +13,6 @@
 #pragma clang diagnostic pop
 
 #include <fstream>
-#include <iostream>
 #include <map>
 #include <stdexcept>
 #include <string>

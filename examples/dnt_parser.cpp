@@ -29,11 +29,10 @@ int main(int argc, char** argv) {
     }
 
     std::ifstream f(argv[1]);
-    TOMLHandler handler;
     try {
-        loltoml::parse(f, handler);
+        std::map<std::string, ConfigReader::TOMLValue> configs = ConfigReader::parse(f);
         std::cout << std::boolalpha;
-        std::cout << handler.configs_ << std::endl;
+        std::cout << configs << std::endl;
     }
     catch (const loltoml::parser_error_t& e) {
         std::cerr << e.message() << std::endl;

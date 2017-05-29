@@ -9,7 +9,7 @@
 #pragma clang diagnostic ignored "-Wpadded"
 #pragma clang diagnostic ignored "-Wshadow"
 #pragma clang diagnostic ignored "-Wweak-vtables"
-#include <loltoml/parse.hpp>
+#include "loltoml/parse.hpp"
 #pragma clang diagnostic pop
 
 #include <fstream>
@@ -19,6 +19,7 @@
 
 #include "toml_value.h"
 
+namespace ConfigReader {
 /**
  * Create a map of the key-value pairs in a "TOML+" configuration file.
  * 
@@ -45,22 +46,22 @@
  * @param input An input stream that stores the TOML data.
  * @return A map of the keys in the TOML data, to their values.
  */
-inline std::map<std::string, TOMLValue> parseConfig(std::istream& input);
+inline std::map<std::string, TOMLValue> parse(std::istream& input);
 
 /** Create a map of the key-value pairs in a "TOML+" configuration file.
  * 
  * @param filename Name of the TOML file.
  * @return A map of the keys in the TOML data, to their values.
  */
-inline std::map<std::string, TOMLValue> parseConfig(const std::string& filename);
+inline std::map<std::string, TOMLValue> parse(const std::string& filename);
 
 
 /** 
  * Error thrown when the `TOMLHandler` encounters unsupported TOML expressions.
  */
 class UnsupportedTOMLExpressionError : public std::runtime_error {
-  public:
-    using std::runtime_error::runtime_error;
+public:
+  using std::runtime_error::runtime_error;
 };
 
 
@@ -90,76 +91,74 @@ class UnsupportedTOMLExpressionError : public std::runtime_error {
  * This class is used by `parseConfig`.
  */
 class TOMLHandler {
-  public:
-    // The Handler interface implementation.
-    void start_document() { }
+public:
+  void start_document() { }
 
-    void finish_document() { }
+  void finish_document() { }
 
-    // Ignore comments.
-    void comment(const std::string &) { }
+  // Ignore comments.
+  void comment(const std::string&) { }
 
-    void array_table(loltoml::key_iterator_t /*begin*/, loltoml::key_iterator_t /*end*/) __attribute__((noreturn)) {
-      throw UnsupportedTOMLExpressionError("array table");
+  void array_table(loltoml::key_iterator_t /*begin*/, loltoml::key_iterator_t /*end*/) __attribute__((noreturn)) {
+    throw UnsupportedTOMLExpressionError("array table");
+  }
+
+  void table(loltoml::key_iterator_t /*begin*/, loltoml::key_iterator_t /*end*/) __attribute__((noreturn)) {
+    throw UnsupportedTOMLExpressionError("table");
+  }
+
+  void start_array() __attribute__((noreturn)) {
+    throw UnsupportedTOMLExpressionError("array");
+  }
+
+  void finish_array(std::size_t) __attribute__((noreturn)) {
+    throw UnsupportedTOMLExpressionError("array");
+  }
+
+  void start_inline_table() __attribute__((noreturn)) {
+    throw UnsupportedTOMLExpressionError("inline table");
+  }
+
+  void finish_inline_table(std::size_t) __attribute__((noreturn)) {
+    throw UnsupportedTOMLExpressionError("inline table");
+  }
+
+  void key(const std::string &key) {
+    curr_key_ = key;
+  }
+
+  void boolean(bool value) {
+    configs_[curr_key_] = value;
+  }
+
+  void string(const std::string& value) {
+    configs_[curr_key_] = TOMLValue(value);
+  }
+
+  void datetime(const std::string& /*value*/) __attribute__((noreturn)) {
+    throw UnsupportedTOMLExpressionError("datetime");
+  }
+
+  void integer(long long value) {
+    configs_[curr_key_] = static_cast<std::int64_t>(value);
+  }
+
+  void floating_point(double value) {
+    configs_[curr_key_] = value;
+  }
+
+  void symbol(const std::string &value) {
+    if (configs_.find(value) == configs_.end()) {
+      throw std::runtime_error("Identifier \"" + value
+          + "\" on right hand side of =, but undefined.");
     }
+    configs_.emplace(curr_key_, configs_.at(value));
+  }
 
-    void table(loltoml::key_iterator_t /*begin*/, loltoml::key_iterator_t /*end*/) __attribute__((noreturn)) {
-      throw UnsupportedTOMLExpressionError("table");
-    }
+  std::map<std::string, TOMLValue> configs_;
 
-    void start_array() __attribute__((noreturn)) {
-      throw UnsupportedTOMLExpressionError("array");
-    }
-
-    void finish_array(std::size_t) __attribute__((noreturn)) {
-      throw UnsupportedTOMLExpressionError("array");
-    }
-
-    void start_inline_table() __attribute__((noreturn)) {
-      throw UnsupportedTOMLExpressionError("inline table");
-    }
-
-    void finish_inline_table(std::size_t) __attribute__((noreturn)) {
-      throw UnsupportedTOMLExpressionError("inline table");
-    }
-
-    void key(const std::string &key) {
-      curr_key_ = key;
-    }
-
-    void boolean(bool value) {
-      configs_[curr_key_] = value;
-    }
-
-    void string(const std::string &value) {
-      configs_[curr_key_] = TOMLValue(value);
-    }
-
-    void datetime(const std::string &/*value*/) __attribute__((noreturn)) {
-      throw UnsupportedTOMLExpressionError("datetime");
-      //configs_[curr_key_] = TOMLValue(value_type::datetime, value);
-    }
-
-    void integer(long long value) {
-      configs_[curr_key_] = static_cast<std::int64_t>(value);
-    }
-
-    void floating_point(double value) {
-      configs_[curr_key_] = value;
-    }
-
-    void symbol(const std::string &value) {
-      if (configs_.find(value) == configs_.end()) {
-        throw std::runtime_error("Identifier \"" + value
-            + "\" on right hand side of =, but undefined.");
-      }
-      configs_.emplace(curr_key_, configs_.at(value));
-    }
-
-    std::map<std::string, TOMLValue> configs_;
-
-  private:
-    std::string curr_key_;
+private:
+  std::string curr_key_;
 };
 
 
@@ -169,14 +168,14 @@ class TOMLHandler {
 //   - UnsupportedTOMLExpressionError if the TOMLHandler does not know how to
 //     handle a TOML expression, such as DateTime.
 //   - any std::exception that might be thrown when handling streams
-inline std::map<std::string, TOMLValue> parseConfig(std::istream& input) {
-  TOMLHandler handler;
+inline std::map<std::string, TOMLValue> parse(std::istream& input) {
+  ConfigReader::TOMLHandler handler;
   loltoml::parse(input, handler);
   return handler.configs_;
 }
 
-
-inline std::map<std::string, TOMLValue> parseConfig(const std::string& filename) {
+inline std::map<std::string, TOMLValue> parse(const std::string& filename) {
   std::ifstream file(filename);
-  return parseConfig(file);
+  return parse(file);
+}
 }

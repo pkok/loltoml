@@ -491,33 +491,6 @@ inline std::string escape_string(const std::string& text) {
 }
 
 
-namespace std {
-  /**
-   * Easy string convert function for `TOMLValue`.
-   * 
-   * @param value The TOMLValue of which a string representation is requested.
-   * @return The string representation.
-   */
-  inline std::string to_string(const ConfigReader::TOMLValue& value) {
-    switch (value.type()) {
-      case ConfigReader::TOMLValue::Type::empty:
-        return "void";
-      case ConfigReader::TOMLValue::Type::boolean:
-        return to_string(bool(value));
-      case ConfigReader::TOMLValue::Type::string:
-        return std::string(value);
-      // TODO: Uncomment when implementing support for TOML datetime values
-      //case ConfigReader::TOMLValue::Type::datetime:
-      //    return value.as_datetime_;
-      case ConfigReader::TOMLValue::Type::integer:
-        return to_string(std::int64_t(value));
-      case ConfigReader::TOMLValue::Type::floating_point:
-        return to_string(double(value));
-    }
-  }
-}
-
-
 /**
  * Stream operator for `TOMLValue`s.
  * 
